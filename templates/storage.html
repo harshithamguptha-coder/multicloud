@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Storage | Multi-Cloud Integrity{% endblock %}
+
+{% block content %}
+<section class="page-header mb-4">
+  <div>
+    <p class="text-uppercase text-muted small mb-1">Cloud storage viewer</p>
+    <h1 class="h2 mb-1">Primary and backup bucket access</h1>
+    <p class="text-secondary mb-0">Open signed views for primary and backup objects without changing metadata.</p>
+  </div>
+  <button id="refresh-btn" class="btn btn-outline-secondary btn-sm">Refresh Data</button>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card h-100">
+      <div class="stat-label">Primary Bucket</div>
+      <div class="stat-value">Backblaze B2</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card h-100">
+      <div class="stat-label">Backup Bucket</div>
+      <div class="stat-value">Backblaze B2</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card h-100">
+      <div class="stat-label">Access</div>
+      <div class="stat-value">Signed URLs</div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm dashboard-card">
+  <div class="card-body p-0">
+    <div class="d-flex justify-content-between align-items-center p-4 border-bottom">
+      <div>
+        <p class="text-uppercase text-muted small mb-1">Objects</p>
+        <h2 class="h4 mb-0">Cloud copies</h2>
+      </div>
+      <span class="badge text-bg-primary">Primary + Backup</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Filename</th>
+            <th>Status</th>
+            <th>Hash</th>
+            <th>Cloud Actions</th>
+          </tr>
+        </thead>
+        <tbody id="storage-file-list">
+          <tr><td colspan="4" class="text-center text-secondary py-4">Loading storage objects...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

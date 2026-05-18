@@ -87,6 +87,38 @@ body {
   color: rgba(226, 232, 240, 0.72) !important;
 }
 
+.sidebar-nav {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.9rem;
+  color: rgba(226, 232, 240, 0.78);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sidebar-link:hover,
+.sidebar-link.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 1.5rem;
+  background: var(--surface);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -139,9 +171,18 @@ body {
   color: var(--text-soft);
 }
 
+.hash-text {
+  max-width: 24rem;
+  overflow-wrap: anywhere;
+}
+
 .recovered-row {
   background: linear-gradient(90deg, rgba(14, 165, 233, 0.14), rgba(191, 219, 254, 0.1));
   animation: recoveredPulse 1.4s ease;
+}
+
+.tampered-row {
+  background: linear-gradient(90deg, rgba(220, 38, 38, 0.14), rgba(254, 226, 226, 0.16));
 }
 
 .recovered-log-row {

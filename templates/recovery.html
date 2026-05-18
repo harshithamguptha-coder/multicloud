@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Recovery | Multi-Cloud Integrity{% endblock %}
+
+{% block content %}
+<section class="page-header mb-4">
+  <div>
+    <p class="text-uppercase text-muted small mb-1">Recovery center</p>
+    <h1 class="h2 mb-1">Deleted files and recovery history</h1>
+    <p class="text-secondary mb-0">Restore deleted metadata and audit recovery or tamper events.</p>
+  </div>
+  <button id="refresh-btn" class="btn btn-outline-secondary btn-sm">Refresh Data</button>
+</section>
+
+<div class="row g-4">
+  <div class="col-xl-6">
+    <div class="card border-0 shadow-sm dashboard-card h-100">
+      <div class="card-body p-0">
+        <div class="p-4 border-bottom">
+          <p class="text-uppercase text-muted small mb-1">Archive</p>
+          <h2 class="h4 mb-0">Deleted files</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Filename</th>
+                <th>Status</th>
+                <th>Deleted</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="deleted-file-list">
+              <tr><td colspan="4" class="text-center text-secondary py-4">Loading deleted files...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-6">
+    <div class="card border-0 shadow-sm dashboard-card h-100">
+      <div class="card-body p-0">
+        <div class="p-4 border-bottom">
+          <p class="text-uppercase text-muted small mb-1">Recovery history</p>
+          <h2 class="h4 mb-0">Alerts and recovery logs</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Filename</th>
+                <th>Action</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="recovery-log-list">
+              <tr><td colspan="3" class="text-center text-secondary py-4">Loading recovery logs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Integrity | Multi-Cloud Integrity{% endblock %}
+
+{% block content %}
+<section class="page-header mb-4">
+  <div>
+    <p class="text-uppercase text-muted small mb-1">Integrity management</p>
+    <h1 class="h2 mb-1">Active files and SHA-256 verification</h1>
+    <p class="text-secondary mb-0">Review file hashes, verify cloud copies, download files, and delete active records.</p>
+  </div>
+  <button id="refresh-btn" class="btn btn-outline-secondary btn-sm">Refresh Data</button>
+</section>
+
+<div class="card border-0 shadow-sm dashboard-card">
+  <div class="card-body p-0">
+    <div class="d-flex justify-content-between align-items-center p-4 border-bottom">
+      <div>
+        <p class="text-uppercase text-muted small mb-1">Primary table</p>
+        <h2 class="h4 mb-0">Active files</h2>
+      </div>
+      <span class="badge text-bg-success">Tracked in MongoDB</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Filename and SHA-256</th>
+            <th>Status</th>
+            <th>Uploaded By</th>
+            <th>Last Verified</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="file-list">
+          <tr><td colspan="5" class="text-center text-secondary py-4">Loading files...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

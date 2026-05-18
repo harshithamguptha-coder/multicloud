@@ -8,6 +8,8 @@ const state = {
 const fileList = document.getElementById("file-list");
 const deletedFileList = document.getElementById("deleted-file-list");
 const recoveryLogList = document.getElementById("recovery-log-list");
+const recentActivityList = document.getElementById("recent-activity-list");
+const storageFileList = document.getElementById("storage-file-list");
 const dashboardUsername = document.getElementById("dashboard-username");
 const notificationArea = document.getElementById("notification-area");
 const alertsPanel = document.getElementById("alerts-panel");
@@ -16,6 +18,11 @@ const fileInput = document.getElementById("file-input");
 const uploadButton = document.getElementById("upload-btn");
 const uploadButtonText = document.getElementById("upload-btn-text");
 const uploadSpinner = document.getElementById("upload-spinner");
+const refreshButton = document.getElementById("refresh-btn");
+const statActiveFiles = document.getElementById("stat-active-files");
+const statTamperedFiles = document.getElementById("stat-tampered-files");
+const statDeletedFiles = document.getElementById("stat-deleted-files");
+const statRecoveryLogs = document.getElementById("stat-recovery-logs");
 
 function escapeHtml(value) {
   return String(value)
@@ -40,19 +47,29 @@ function statusBadge(status) {
 }
 
 function pushAlert(message, tone = "secondary") {
+  if (!notificationArea && !alertsPanel) {
+    return;
+  }
   const alertMarkup = `
     <div class="alert alert-${tone} alert-dismissible fade show mb-3" role="alert">
       ${escapeHtml(message)}
       <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
   `;
-  notificationArea.innerHTML = alertMarkup;
-  alertsPanel.innerHTML = `
-    <div class="alert alert-${tone} mb-0" role="alert">${escapeHtml(message)}</div>
-  `;
+  if (notificationArea) {
+    notificationArea.innerHTML = alertMarkup;
+  }
+  if (alertsPanel) {
+    alertsPanel.innerHTML = `
+      <div class="alert alert-${tone} mb-0" role="alert">${escapeHtml(message)}</div>
+    `;
+  }
 }
 
 function setUploadLoading(isLoading) {
+  if (!uploadButton || !fileInput || !uploadButtonText || !uploadSpinner) {
+    return;
+  }
   uploadButton.disabled = isLoading;
   fileInput.disabled = isLoading;
   uploadButtonText.textContent = isLoading ? "Uploading..." : "Upload";
@@ -71,6 +88,9 @@ function setActionLoading(button, isLoading, loadingLabel) {
 }
 
 function renderFiles(files) {
+  if (!fileList) {
+    return;
+  }
   if (!files.length) {
     fileList.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-4">No active files available.</td></tr>`;
     return;
@@ -78,10 +98,27 @@ function renderFiles(files) {
 
   fileList.innerHTML = files
     .map(
-      (file) => `
-        <tr class="${file.id === state.highlightedRecoveredFileId || file.status === "RECOVERED" ? "recovered-row" : ""}">
+      (file) => {
+        const rowClass =
+          file.status === "TAMPERED"
+            ? "tampered-row"
+            : file.id === state.highlightedRecoveredFileId || file.status === "RECOVERED"
+              ? "recovered-row"
+              : "";
+        const normalizedLabel =
+          file.normalized_filename && file.normalized_filename !== file.filename
+            ? `<div class="small text-danger">Normalized: ${escapeHtml(file.normalized_filename)}</div>`
+            : "";
+        const uploadAliasLabel =
+          file.latest_uploaded_filename && file.latest_uploaded_filename !== file.filename
+            ? `<div class="small text-danger">Uploaded as: ${escapeHtml(file.latest_uploaded_filename)}</div>`
+            : "";
+        return `
+        <tr class="${rowClass}">
           <td>
             <div class="fw-semibold">${escapeHtml(file.filename)}</div>
+            ${uploadAliasLabel}
+            ${normalizedLabel}
             <div class="small text-secondary">${escapeHtml(file.sha256_hash)}</div>
           </td>
           <td>${statusBadge(file.status)}</td>
@@ -97,12 +134,16 @@ function renderFiles(files) {
             </div>
           </td>
         </tr>
-      `,
+      `;
+      },
     )
     .join("");
 }
 
 function renderDeletedFiles(files) {
+  if (!deletedFileList) {
+    return;
+  }
   if (!files.length) {
     deletedFileList.innerHTML = `<tr><td colspan="4" class="text-center text-secondary py-4">No deleted files.</td></tr>`;
     return;
@@ -131,6 +172,9 @@ function renderDeletedFiles(files) {
 }
 
 function renderLogs(logs) {
+  if (!recoveryLogList) {
+    return;
+  }
   if (!logs.length) {
     recoveryLogList.innerHTML = `<tr><td colspan="3" class="text-center text-secondary py-4">No recovery logs available.</td></tr>`;
     return;
@@ -147,6 +191,88 @@ function renderLogs(logs) {
       `,
     )
     .join("");
+}
+
+function renderStorageFiles(files) {
+  if (!storageFileList) {
+    return;
+  }
+  if (!files.length) {
+    storageFileList.innerHTML = `<tr><td colspan="4" class="text-center text-secondary py-4">No active cloud objects available.</td></tr>`;
+    return;
+  }
+
+  storageFileList.innerHTML = files
+    .map(
+      (file) => `
+        <tr class="${file.status === "TAMPERED" ? "tampered-row" : ""}">
+          <td>
+            <div class="fw-semibold">${escapeHtml(file.filename)}</div>
+            <div class="small text-secondary">${escapeHtml(file.content_type || "application/octet-stream")}</div>
+          </td>
+          <td>${statusBadge(file.status)}</td>
+          <td><div class="small text-secondary hash-text">${escapeHtml(file.sha256_hash)}</div></td>
+          <td>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-outline-secondary btn-sm" data-action="view-primary" data-id="${file.id}">View Primary</button>
+              <button class="btn btn-outline-secondary btn-sm" data-action="view-backup" data-id="${file.id}">View Backup</button>
+              <button class="btn btn-dark btn-sm" data-action="download" data-id="${file.id}">Download</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function renderRecentActivity(files, logs) {
+  if (!recentActivityList) {
+    return;
+  }
+
+  const fileEvents = files.slice(0, 5).map((file) => ({
+    name: file.filename,
+    status: file.status,
+    time: file.uploaded_at || file.last_verified_at || "N/A",
+  }));
+  const logEvents = logs.slice(0, 5).map((log) => ({
+    name: log.filename,
+    status: log.action,
+    time: log.timestamp || "N/A",
+  }));
+  const events = [...fileEvents, ...logEvents].slice(0, 8);
+
+  if (!events.length) {
+    recentActivityList.innerHTML = `<tr><td colspan="3" class="text-center text-secondary py-4">No activity yet.</td></tr>`;
+    return;
+  }
+
+  recentActivityList.innerHTML = events
+    .map(
+      (event) => `
+        <tr>
+          <td>${escapeHtml(event.name)}</td>
+          <td>${statusBadge(event.status)}</td>
+          <td>${escapeHtml(event.time)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function updateStats(files, deletedFiles, logs) {
+  if (statActiveFiles) {
+    statActiveFiles.textContent = files.length;
+  }
+  if (statTamperedFiles) {
+    statTamperedFiles.textContent = files.filter((file) => file.status === "TAMPERED").length;
+  }
+  if (statDeletedFiles) {
+    statDeletedFiles.textContent = deletedFiles.length;
+  }
+  if (statRecoveryLogs) {
+    statRecoveryLogs.textContent = logs.length;
+  }
 }
 
 async function api(url, options = {}) {
@@ -195,42 +321,50 @@ async function loadFiles() {
   renderFiles(state.filesCache || []);
   renderDeletedFiles(state.deletedFilesCache || []);
   const logs = await api("/api/recovery-logs");
-  renderLogs(logs.logs || []);
+  const recoveryLogs = logs.logs || [];
+  renderLogs(recoveryLogs);
+  renderStorageFiles(state.filesCache || []);
+  renderRecentActivity(state.filesCache || [], recoveryLogs);
+  updateStats(state.filesCache || [], state.deletedFilesCache || [], recoveryLogs);
 }
 
-uploadForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!fileInput.files.length) {
-    pushAlert("Choose a file before uploading.", "warning");
-    return;
-  }
+if (uploadForm) {
+  uploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!fileInput.files.length) {
+      pushAlert("Choose a file before uploading.", "warning");
+      return;
+    }
 
-  try {
-    setUploadLoading(true);
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    const data = await api("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
-    fileInput.value = "";
-    pushAlert(data.message || "File uploaded successfully.", "success");
-    await loadFiles();
-  } catch (error) {
-    pushAlert(error.message || "Upload failed.", "danger");
-  } finally {
-    setUploadLoading(false);
-  }
-});
+    try {
+      setUploadLoading(true);
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      const data = await api("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      fileInput.value = "";
+      pushAlert(data.message || "File uploaded successfully.", data.file?.status === "TAMPERED" ? "danger" : "success");
+      await loadFiles();
+    } catch (error) {
+      pushAlert(error.message || "Upload failed.", "danger");
+    } finally {
+      setUploadLoading(false);
+    }
+  });
+}
 
-document.getElementById("refresh-btn").addEventListener("click", async () => {
-  try {
-    await loadFiles();
-    pushAlert("Dashboard data refreshed.", "info");
-  } catch (error) {
-    pushAlert(error.message, "danger");
-  }
-});
+if (refreshButton) {
+  refreshButton.addEventListener("click", async () => {
+    try {
+      await loadFiles();
+      pushAlert("Dashboard data refreshed.", "info");
+    } catch (error) {
+      pushAlert(error.message, "danger");
+    }
+  });
+}
 
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-action]");

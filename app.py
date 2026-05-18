@@ -1,5 +1,6 @@
 import atexit
 import logging
+import re
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -21,6 +22,16 @@ BASE_DIR = Path(__file__).resolve().parent
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
 storage_service = None
+
+
+COPY_SUFFIX_RE = re.compile(
+    r"(?:"
+    r"\s*\(\s*\d+\s*\)"
+    r"|[\s._-]+(?:copy|final|edited|modified|new|latest|updated|revision|rev)\d*"
+    r"|[\s._-]+v?\d{1,3}"
+    r")$",
+    re.IGNORECASE,
+)
 
 
 class MongoState:
@@ -113,9 +124,72 @@ def create_app():
 def ensure_indexes():
     mongo.db.users.create_index("username", unique=True)
     mongo.db.files.create_index("filename")
+    mongo.db.files.create_index("normalized_filename")
     mongo.db.files.create_index("status")
     mongo.db.deleted_files.create_index("filename")
+    mongo.db.deleted_files.create_index("normalized_filename")
     mongo.db.recovery_logs.create_index("timestamp")
+
+
+def normalize_filename_for_integrity(filename: str) -> str:
+    raw_name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    raw_path = Path(raw_name)
+    stem = raw_path.stem
+    suffix = raw_path.suffix.lower()
+
+    previous = None
+    while stem != previous:
+        previous = stem
+        stem = COPY_SUFFIX_RE.sub("", stem).strip(" ._-")
+
+    normalized = secure_filename(f"{stem}{suffix}")
+    if normalized:
+        return normalized.lower()
+
+    safe_name = secure_filename(filename or "")
+    if not safe_name:
+        return ""
+    return safe_name.lower()
+
+
+def find_existing_normalized_file(normalized_filename: str, uploaded_filename: str) -> dict | None:
+    uploaded_candidates = {
+        normalized_filename,
+        normalize_filename_for_integrity(uploaded_filename),
+        normalize_filename_for_integrity(secure_filename(uploaded_filename)),
+    }
+    uploaded_candidates.discard("")
+
+    active_docs = mongo.db.files.find({"deleted": {"$ne": True}}).sort("uploaded_at", 1)
+    for doc in active_docs:
+        doc_candidates = {
+            normalize_filename_for_integrity(doc.get("normalized_filename", "")),
+            normalize_filename_for_integrity(doc.get("original_filename", "")),
+            normalize_filename_for_integrity(doc.get("filename", "")),
+        }
+        doc_candidates.discard("")
+        if uploaded_candidates.intersection(doc_candidates):
+            return doc
+    return None
+
+
+def log_tamper_event(file_doc: dict, uploaded_filename: str, normalized_filename: str, uploaded_hash: str) -> None:
+    original_hash = file_doc.get("original_hash", file_doc["sha256_hash"])
+    mongo.db.recovery_logs.insert_one(
+        {
+            "file_id": file_doc["_id"],
+            "filename": file_doc.get("filename", uploaded_filename),
+            "action": "tamper_detected_on_upload",
+            "timestamp": utc_now(),
+            "details": {
+                "uploaded_filename": uploaded_filename,
+                "normalized_filename": normalized_filename,
+                "stored_hash": original_hash,
+                "uploaded_hash": uploaded_hash,
+                "performed_by": current_user(),
+            },
+        }
+    )
 
 def allowed_file(filename: str, app: Flask) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
@@ -125,6 +199,9 @@ def serialize_file(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
         "filename": doc["filename"],
+        "original_filename": doc.get("original_filename", doc["filename"]),
+        "latest_uploaded_filename": doc.get("latest_uploaded_filename", doc.get("original_filename", doc["filename"])),
+        "normalized_filename": doc.get("normalized_filename", normalize_filename_for_integrity(doc["filename"])),
         "status": doc.get("status", "UNKNOWN"),
         "sha256_hash": doc.get("original_hash", doc["sha256_hash"]),
         "current_hash": doc.get("current_hash"),
@@ -262,6 +339,21 @@ def register_routes(app: Flask):
     def dashboard():
         return render_template("dashboard.html", username=current_user())
 
+    @app.get("/integrity")
+    @login_required
+    def integrity():
+        return render_template("integrity.html", username=current_user())
+
+    @app.get("/recovery")
+    @login_required
+    def recovery():
+        return render_template("recovery.html", username=current_user())
+
+    @app.get("/storage")
+    @login_required
+    def storage():
+        return render_template("storage.html", username=current_user())
+
     @app.get("/api/me")
     def me():
         return jsonify(
@@ -288,44 +380,86 @@ def register_routes(app: Flask):
 
         content_type = file.mimetype or "application/octet-stream"
         file_hash = sha256_bytes(content)
-        logger.info("upload start filename=%s user=%s size=%s", filename, current_user(), len(content))
-        existing_doc = mongo.db.files.find_one({"filename": filename})
+        normalized_filename = normalize_filename_for_integrity(file.filename)
+        logger.info(
+            "upload start filename=%s normalized=%s user=%s size=%s",
+            filename,
+            normalized_filename,
+            current_user(),
+            len(content),
+        )
+        existing_doc = find_existing_normalized_file(normalized_filename, filename)
 
         if existing_doc:
-            logger.warning("existing filename upload detected filename=%s id=%s", filename, existing_doc["_id"])
+            original_hash = existing_doc.get("original_hash", existing_doc["sha256_hash"])
+            new_status = "SAFE" if file_hash == original_hash else "TAMPERED"
+            logger.warning(
+                "TAMPER DEBUG upload filename=%s normalized=%s old_hash=%s new_hash=%s decision=%s matched_id=%s",
+                filename,
+                normalized_filename,
+                original_hash,
+                file_hash,
+                new_status,
+                existing_doc["_id"],
+            )
+            logger.warning(
+                "existing normalized filename upload detected filename=%s normalized=%s id=%s",
+                filename,
+                normalized_filename,
+                existing_doc["_id"],
+            )
             try:
                 storage_service.overwrite_primary(existing_doc["object_name"], content, content_type)
             except Exception as exc:
                 logger.exception("replacement upload failed filename=%s user=%s error=%s", filename, current_user(), exc)
                 return jsonify({"error": f"Upload failed: {exc}"}), 500
 
-            original_hash = existing_doc.get("original_hash", existing_doc["sha256_hash"])
-            new_status = "SAFE" if file_hash == original_hash else "TAMPERED"
+            now = utc_now()
             mongo.db.files.update_one(
                 {"_id": existing_doc["_id"]},
                 {
                     "$set": {
+                        "original_filename": existing_doc.get("original_filename", existing_doc["filename"]),
+                        "latest_uploaded_filename": filename,
+                        "normalized_filename": normalized_filename,
                         "content_type": content_type,
                         "current_hash": file_hash,
                         "latest_hash": file_hash,
                         "status": new_status,
-                        "updated_at": utc_now(),
+                        "updated_at": now,
+                        "uploaded_at": now,
                         "uploaded_by": current_user(),
                     },
                     "$inc": {"version_count": 1},
                 },
             )
+            if new_status == "TAMPERED":
+                log_tamper_event(existing_doc, filename, normalized_filename, file_hash)
             updated_doc = fetch_file_or_404(str(existing_doc["_id"]))
+            message = (
+                "Tampering detected: uploaded content does not match the trusted SHA-256 hash."
+                if new_status == "TAMPERED"
+                else "Existing file checked against trusted SHA-256 hash and marked safe."
+            )
             return (
                 jsonify(
                     {
-                        "message": "Existing file updated in primary bucket. Original hash preserved for verification.",
+                        "message": message,
                         "file": serialize_file(updated_doc),
                     }
                 ),
                 200,
             )
 
+        logger.warning(
+            "TAMPER DEBUG upload filename=%s normalized=%s old_hash=%s new_hash=%s decision=%s matched_id=%s",
+            filename,
+            normalized_filename,
+            None,
+            file_hash,
+            "NEW_FILE",
+            None,
+        )
         try:
             storage_result = storage_service.upload_to_both(filename, content, content_type)
         except Exception as exc:
@@ -334,6 +468,9 @@ def register_routes(app: Flask):
 
         document = {
             "filename": filename,
+            "original_filename": filename,
+            "latest_uploaded_filename": filename,
+            "normalized_filename": normalized_filename,
             "object_name": storage_result["object_name"],
             "sha256_hash": file_hash,
             "original_hash": file_hash,
