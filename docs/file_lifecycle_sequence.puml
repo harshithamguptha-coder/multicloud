@@ -1,0 +1,89 @@
+@startuml
+title File Lifecycle - Upload, Verify, Delete, Recover
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+actor User
+participant "Browser UI\nstatic/js/app.js" as UI
+participant "Flask app.py\nRoutes" as App
+participant "services.storage\nMultiCloudStorage" as Storage
+participant "services.integrity\nverify_and_heal" as Integrity
+database "MongoDB Atlas" as Mongo
+collections "Primary B2 Bucket" as Primary
+collections "Backup B2 Bucket" as Backup
+
+== Upload ==
+User -> UI : Select file and click Upload
+UI -> App : POST /api/upload\nmultipart file
+App -> App : Validate type and content\nsecure filename
+App -> App : Calculate SHA-256\nnormalize filename
+App -> Mongo : Find active matching normalized filename
+
+alt New file
+  App -> Storage : upload_to_both(filename, bytes, content_type)
+  Storage -> Primary : Upload object
+  Storage -> Backup : Upload same object
+  App -> Mongo : Insert files document\nstatus = SAFE\noriginal_hash = SHA-256
+  App --> UI : 201 File uploaded successfully
+else Existing normalized file
+  App -> App : Compare new SHA-256\nwith trusted original_hash
+  App -> Storage : overwrite_primary(object_name, bytes, content_type)
+  Storage -> Primary : Replace primary object
+  App -> Mongo : Update current_hash,\nlatest_hash, status
+  opt Hash mismatch
+    App -> Mongo : Insert recovery_logs\n tamper_detected_on_upload
+  end
+  App --> UI : 200 SAFE or TAMPERED
+end
+
+== Verify and Auto-Heal ==
+User -> UI : Click Verify
+UI -> App : GET /api/verify/{file_id}
+App -> Mongo : Load file metadata
+App -> Integrity : verify_and_heal(file_doc, storage, db)
+Integrity -> Storage : download_from_primary(object_name)
+Storage -> Primary : Read object
+Integrity -> Storage : download_from_backup(object_name)
+Storage -> Backup : Read object
+Integrity -> Integrity : Compare primary_hash and backup_hash\nagainst trusted original_hash
+
+alt Primary invalid and backup valid
+  Integrity -> Storage : overwrite_primary(object_name, backup_content)
+  Storage -> Primary : Restore clean copy
+  Integrity -> Mongo : Update status = RECOVERED\nhashes + timestamps
+  Integrity -> Mongo : Insert recovery log
+else Primary valid
+  Integrity -> Mongo : Update status = SAFE\nhashes + timestamps
+else Primary invalid and backup invalid/missing
+  Integrity -> Mongo : Update status = TAMPERED
+  Integrity -> Mongo : Insert tamper log
+end
+
+Integrity --> App : Verification result
+App --> UI : file + verification JSON
+
+== Delete ==
+User -> UI : Click Delete
+UI -> App : POST /api/delete/{file_id}
+App -> Mongo : Load active file metadata
+App -> Storage : delete_from_bucket(primary, object_name)
+Storage -> Primary : Delete primary object
+App -> Mongo : Insert into deleted_files\nstatus = DELETED
+App -> Mongo : Remove from files
+App --> UI : Deleted response
+
+== Recover Deleted File ==
+User -> UI : Click Recover
+UI -> App : POST /api/recover/{file_id}
+App -> Mongo : Load deleted file metadata
+App -> Storage : download_from_backup(object_name)
+Storage -> Backup : Read backup object
+App -> App : Validate backup SHA-256\nagainst trusted original_hash
+App -> Storage : simple_overwrite_primary(object_name, backup_content)
+Storage -> Primary : Restore primary object
+App -> Mongo : Move metadata back to files\nstatus = SAFE
+App -> Mongo : Insert recovery log
+App --> UI : Recovery successful
+
+@enduml

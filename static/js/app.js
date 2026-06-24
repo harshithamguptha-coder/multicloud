@@ -33,6 +33,29 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function formatTimestamp(value) {
+  if (!value) {
+    return "N/A";
+  }
+
+  const raw = String(value);
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+}
+
 function statusBadge(status) {
   const normalized = (status || "UNKNOWN").toUpperCase();
   const badgeClass =
@@ -123,7 +146,7 @@ function renderFiles(files) {
           </td>
           <td>${statusBadge(file.status)}</td>
           <td>${escapeHtml(file.uploaded_by || "Unknown")}</td>
-          <td>${escapeHtml(file.last_verified_at || "Never")}</td>
+          <td>${escapeHtml(formatTimestamp(file.last_verified_at) || "Never")}</td>
           <td>
             <div class="d-flex flex-wrap gap-2">
               <button class="btn btn-outline-primary btn-sm" data-action="verify" data-id="${file.id}">Verify</button>
@@ -158,7 +181,7 @@ function renderDeletedFiles(files) {
             <div class="small text-secondary">${escapeHtml(file.sha256_hash)}</div>
           </td>
           <td><span class="badge text-bg-secondary">DELETED</span></td>
-          <td>${escapeHtml(file.last_verified_at || file.uploaded_at || "N/A")}</td>
+          <td>${escapeHtml(formatTimestamp(file.last_verified_at || file.uploaded_at))}</td>
           <td>
             <div class="d-flex flex-wrap gap-2">
               <button class="btn btn-warning btn-sm" data-action="recover" data-id="${file.id}">Recover</button>
@@ -253,7 +276,7 @@ function renderRecentActivity(files, logs) {
         <tr>
           <td>${escapeHtml(event.name)}</td>
           <td>${statusBadge(event.status)}</td>
-          <td>${escapeHtml(event.time)}</td>
+          <td>${escapeHtml(formatTimestamp(event.time))}</td>
         </tr>
       `,
     )

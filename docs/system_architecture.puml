@@ -1,0 +1,83 @@
+@startuml
+title Secure Multi-Cloud Data Integrity and Self-Healing Storage System - Architecture
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+
+actor "Authenticated User" as User
+
+node "Client Browser" as Browser {
+  component "Jinja HTML Pages\nlogin, signup, dashboard,\nintegrity, recovery, storage" as Pages
+  component "static/js/app.js\nFetch API + UI rendering" as Frontend
+  component "Bootstrap + styles.css" as UI
+}
+
+node "Flask Application Server" as FlaskServer {
+  component "app.py\nFlask route/controller layer" as App
+  component "Session Auth\nWerkzeug password hashing" as Auth
+  component "MongoState\nMongoDB connection manager" as MongoState
+  component "Integrity Helpers\nnormalize filenames,\nSHA-256 checks" as AppIntegrity
+}
+
+package "Service Layer" as Services {
+  component "services.integrity\nverify_and_heal()\nsha256_bytes()\nutc_now()" as IntegrityService
+  component "services.storage\nMultiCloudStorage" as StorageService
+}
+
+database "MongoDB Atlas" as Mongo {
+  component "users" as UsersCollection
+  component "files" as FilesCollection
+  component "deleted_files" as DeletedFilesCollection
+  component "recovery_logs" as RecoveryLogsCollection
+}
+
+cloud "Backblaze B2\nS3-Compatible API" as Backblaze {
+  storage "Primary Bucket" as PrimaryBucket
+  storage "Backup Bucket" as BackupBucket
+}
+
+User --> Pages : uses web UI
+Pages --> Frontend : loads
+Pages --> UI : styled by
+
+Frontend --> App : HTTPS requests\n/api/me\n/api/files\n/api/upload\n/api/verify/{id}\n/api/delete/{id}\n/api/recover/{id}\n/api/view/{id}/{location}\n/api/download/{id}\n/api/recovery-logs
+App --> Pages : renders server pages
+
+App --> Auth : signup/login/logout\nsession checks
+Auth --> UsersCollection : create user\nverify password hash
+
+App --> MongoState : initialize DB client\nensure indexes
+MongoState --> Mongo : TLS connection\nmongodb+srv
+
+App --> AppIntegrity : filename normalization\nhash comparison\nstatus decisions
+App --> IntegrityService : verify_and_heal(file, storage, db)
+App --> StorageService : upload, view URL,\ndownload URL, delete,\nmanual recovery
+
+IntegrityService --> StorageService : download primary/backup\noverwrite primary if valid backup exists
+IntegrityService --> FilesCollection : update status + hashes
+IntegrityService --> DeletedFilesCollection : update deleted metadata if needed
+IntegrityService --> RecoveryLogsCollection : log tamper/recovery events
+
+StorageService --> PrimaryBucket : upload/download/head/delete\npresigned URL
+StorageService --> BackupBucket : upload/download/head\npresigned URL
+
+App --> FilesCollection : create/list/update/delete active file metadata
+App --> DeletedFilesCollection : soft-delete metadata\nrestore metadata
+App --> RecoveryLogsCollection : insert/read recovery logs
+
+note right of FilesCollection
+Stores trusted original_hash,
+current_hash, latest_hash,
+object_name, status,
+uploaded_by, timestamps.
+end note
+
+note bottom of Backblaze
+The same object_name is stored in
+both buckets. The backup bucket is
+used to heal the primary copy.
+end note
+
+@enduml

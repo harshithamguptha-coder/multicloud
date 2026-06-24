@@ -195,6 +195,10 @@ def allowed_file(filename: str, app: Flask) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
 
 
+def allowed_extensions_message(app: Flask) -> str:
+    return ", ".join(sorted(app.config["ALLOWED_EXTENSIONS"]))
+
+
 def serialize_file(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
@@ -372,7 +376,17 @@ def register_routes(app: Flask):
 
         filename = secure_filename(file.filename)
         if not filename or not allowed_file(filename, app):
-            return jsonify({"error": "File type is not allowed"}), 400
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"File type is not allowed for '{filename or file.filename}'. "
+                            f"Allowed types: {allowed_extensions_message(app)}."
+                        )
+                    }
+                ),
+                400,
+            )
 
         content = file.read()
         if not content:
