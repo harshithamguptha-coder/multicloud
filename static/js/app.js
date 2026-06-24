@@ -33,30 +33,6 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function formatTimestamp(value) {
-  if (!value) {
-    return "N/A";
-  }
-
-  const raw = String(value);
-  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-  const utcNormalized = /z$|[+-]\d\d:\d\d$/i.test(normalized) ? normalized : `${normalized}Z`;
-  const date = new Date(utcNormalized);
-  if (Number.isNaN(date.getTime())) {
-    return raw;
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Kolkata",
-  }).format(date);
-}
-
 function statusBadge(status) {
   const normalized = (status || "UNKNOWN").toUpperCase();
   const badgeClass =
@@ -147,7 +123,6 @@ function renderFiles(files) {
           </td>
           <td>${statusBadge(file.status)}</td>
           <td>${escapeHtml(file.uploaded_by || "Unknown")}</td>
-          <td>${escapeHtml(formatTimestamp(file.last_verified_at) || "Never")}</td>
           <td>
             <div class="d-flex flex-wrap gap-2">
               <button class="btn btn-outline-primary btn-sm" data-action="verify" data-id="${file.id}">Verify</button>
@@ -182,7 +157,6 @@ function renderDeletedFiles(files) {
             <div class="small text-secondary">${escapeHtml(file.sha256_hash)}</div>
           </td>
           <td><span class="badge text-bg-secondary">DELETED</span></td>
-          <td>${escapeHtml(formatTimestamp(file.last_verified_at || file.uploaded_at))}</td>
           <td>
             <div class="d-flex flex-wrap gap-2">
               <button class="btn btn-warning btn-sm" data-action="recover" data-id="${file.id}">Recover</button>
@@ -210,7 +184,6 @@ function renderLogs(logs) {
         <tr class="${state.highlightedRecoveredFileId && log.file_id === state.highlightedRecoveredFileId ? "recovered-log-row" : ""}">
           <td>${escapeHtml(log.filename)}</td>
           <td>${escapeHtml(log.action)}</td>
-          <td>${escapeHtml(log.timestamp)}</td>
         </tr>
       `,
     )
@@ -257,17 +230,15 @@ function renderRecentActivity(files, logs) {
   const fileEvents = files.slice(0, 5).map((file) => ({
     name: file.filename,
     status: file.status,
-    time: file.uploaded_at || file.last_verified_at || "N/A",
   }));
   const logEvents = logs.slice(0, 5).map((log) => ({
     name: log.filename,
     status: log.action,
-    time: log.timestamp || "N/A",
   }));
   const events = [...fileEvents, ...logEvents].slice(0, 8);
 
   if (!events.length) {
-    recentActivityList.innerHTML = `<tr><td colspan="3" class="text-center text-secondary py-4">No activity yet.</td></tr>`;
+    recentActivityList.innerHTML = `<tr><td colspan="2" class="text-center text-secondary py-4">No activity yet.</td></tr>`;
     return;
   }
 
@@ -277,7 +248,6 @@ function renderRecentActivity(files, logs) {
         <tr>
           <td>${escapeHtml(event.name)}</td>
           <td>${statusBadge(event.status)}</td>
-          <td>${escapeHtml(formatTimestamp(event.time))}</td>
         </tr>
       `,
     )

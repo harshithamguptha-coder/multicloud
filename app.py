@@ -1,8 +1,8 @@
 import atexit
 import logging
 import re
-from functools import wraps
 from datetime import timezone
+from functools import wraps
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -118,8 +118,22 @@ def create_app():
     storage_service = MultiCloudStorage(app)
 
     ensure_indexes()
+    register_template_helpers(app)
     register_routes(app)
     return app
+
+
+def register_template_helpers(app: Flask):
+    @app.context_processor
+    def inject_asset_version():
+        def asset_version(relative_path: str) -> str:
+            asset_path = BASE_DIR / "static" / relative_path
+            try:
+                return str(int(asset_path.stat().st_mtime))
+            except OSError:
+                return "1"
+
+        return {"asset_version": asset_version}
 
 
 def ensure_indexes():
