@@ -40,7 +40,8 @@ function formatTimestamp(value) {
 
   const raw = String(value);
   const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-  const date = new Date(normalized);
+  const utcNormalized = /z$|[+-]\d\d:\d\d$/i.test(normalized) ? normalized : `${normalized}Z`;
+  const date = new Date(utcNormalized);
   if (Number.isNaN(date.getTime())) {
     return raw;
   }

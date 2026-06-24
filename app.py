@@ -2,6 +2,7 @@ import atexit
 import logging
 import re
 from functools import wraps
+from datetime import timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -199,6 +200,14 @@ def allowed_extensions_message(app: Flask) -> str:
     return ", ".join(sorted(app.config["ALLOWED_EXTENSIONS"]))
 
 
+def format_utc_timestamp(value):
+    if value is None:
+        return None
+    if hasattr(value, "astimezone"):
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return str(value)
+
+
 def serialize_file(doc: dict) -> dict:
     return {
         "id": str(doc["_id"]),
@@ -212,8 +221,8 @@ def serialize_file(doc: dict) -> dict:
         "latest_hash": doc.get("latest_hash"),
         "version_count": doc.get("version_count", 1),
         "content_type": doc.get("content_type"),
-        "uploaded_at": doc.get("uploaded_at").isoformat() if doc.get("uploaded_at") else None,
-        "last_verified_at": doc.get("last_verified_at").isoformat() if doc.get("last_verified_at") else None,
+        "uploaded_at": format_utc_timestamp(doc.get("uploaded_at")),
+        "last_verified_at": format_utc_timestamp(doc.get("last_verified_at")),
         "uploaded_by": doc.get("uploaded_by"),
         "cloud_urls": {"primary": None, "backup": None},
         "deleted": doc.get("deleted", False),
@@ -698,7 +707,7 @@ def register_routes(app: Flask):
                     "file_id": str(log["file_id"]),
                     "filename": log["filename"],
                     "action": log["action"],
-                    "timestamp": log["timestamp"].isoformat(),
+                    "timestamp": format_utc_timestamp(log["timestamp"]),
                     "details": log.get("details", {}),
                 }
             )
